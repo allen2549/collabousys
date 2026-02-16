@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <title>Sistema PDV</title>
     <style>
         * {
@@ -854,10 +855,143 @@
             salvarDados();
         });
 
-        // Exportar PDF Fechamento
-        document.getElementById('exportarPDF').addEventListener('click', () => {
+        // Exportar PDF do Fechamento
+        document.getElementById('btnExportarPDF').addEventListener('click', async () => {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            const caixa = state.caixaAtual;
             const resumo = calcularResumoFechamento();
-            exportarFechamentoPDF(resumo);
+            
+            // Cabeçalho
+            doc.setFontSize(18);
+            doc.setFont(undefined, 'bold');
+            doc.text('FECHAMENTO DE CAIXA', 105, 20, { align: 'center' });
+            
+            doc.setFontSize(10);
+            doc.setFont(undefined, 'normal');
+            doc.text(`Caixa #${state.caixas.length + 1}`, 105, 28, { align: 'center' });
+            doc.text(`Data: ${formatarData(new Date())}`, 105, 34, { align: 'center' });
+            
+            // Linha separadora
+            doc.setLineWidth(0.5);
+            doc.line(20, 38, 190, 38);
+            
+            let y = 48;
+            
+            // Informações do Caixa
+            doc.setFontSize(12);
+            doc.setFont(undefined, 'bold');
+            doc.text('INFORMAÇÕES DO CAIXA', 20, y);
+            y += 8;
+            
+            doc.setFontSize(10);
+            doc.setFont(undefined, 'normal');
+            doc.text(`Abertura: ${formatarData(caixa.dataAbertura)}`, 20, y);
+            y += 6;
+            doc.text(`Valor Inicial: ${formatarMoeda(caixa.valorInicial)}`, 20, y);
+            y += 6;
+            doc.text(`Total de Vendas Realizadas: ${caixa.vendas.length}`, 20, y);
+            y += 10;
+            
+            // Resumo por Forma de Pagamento
+            doc.setFont(undefined, 'bold');
+            doc.text('RESUMO POR FORMA DE PAGAMENTO', 20, y);
+            y += 8;
+            
+            doc.setFont(undefined, 'normal');
+            Object.entries(resumo.porPagamento).forEach(([tipo, valor]) => {
+                doc.text(`${tipo}: ${formatarMoeda(valor)}`, 20, y);
+                y += 6;
+            });
+            y += 6;
+            
+            doc.setFont(undefined, 'bold');
+            doc.setFontSize(11);
+            doc.text(`TOTAL EM VENDAS: ${formatarMoeda(resumo.totalVendas)}`, 20, y);
+            doc.setFontSize(10);
+            y += 10;
+            
+            // Detalhamento de Produtos Vendidos
+            doc.setFont(undefined, 'bold');
+            doc.text('PRODUTOS VENDIDOS', 20, y);
+            y += 8;
+            
+            // Agrupar produtos vendidos
+            const produtosVendidos = {};
+            caixa.vendas.forEach(venda => {
+                venda.items.forEach(item => {
+                    if (!produtosVendidos[item.codigo]) {
+                        produtosVendidos[item.codigo] = {
+                            nome: item.nome,
+                            quantidade: 0,
+                            precoUnitario: item.preco,
+                            subtotal: 0
+                        };
+                    }
+                    produtosVendidos[item.codigo].quantidade += item.quantidade;
+                    produtosVendidos[item.codigo].subtotal += item.preco * item.quantidade;
+                });
+            });
+            
+            // Cabeçalho da tabela
+            doc.setFont(undefined, 'bold');
+            doc.setFontSize(9);
+            doc.text('Código', 20, y);
+            doc.text('Produto', 40, y);
+            doc.text('Qtd', 120, y);
+            doc.text('Preço Unit.', 140, y);
+            doc.text('Total', 170, y);
+            y += 4;
+            doc.line(20, y, 190, y);
+            y += 6;
+            
+            // Linhas dos produtos
+            doc.setFont(undefined, 'normal');
+            doc.setFontSize(8);
+            
+            let totalGeralProdutos = 0;
+            Object.entries(produtosVendidos).forEach(([codigo, dados]) => {
+                // Verificar se precisa de nova página
+                if (y > 270) {
+                    doc.addPage();
+                    y = 20;
+                }
+                
+                doc.text(codigo, 20, y);
+                doc.text(dados.nome.substring(0, 30), 40, y);
+                doc.text(dados.quantidade.toString(), 120, y);
+                doc.text(formatarMoeda(dados.precoUnitario), 140, y);
+                doc.text(formatarMoeda(dados.subtotal), 170, y);
+                
+                totalGeralProdutos += dados.subtotal;
+                y += 6;
+            });
+            
+            y += 4;
+            doc.line(20, y, 190, y);
+            y += 8;
+            
+            // Total Final
+            doc.setFont(undefined, 'bold');
+            doc.setFontSize(12);
+            doc.text(`SALDO FINAL: ${formatarMoeda(resumo.saldoFinal)}`, 20, y);
+            
+            // Rodapé
+            y += 15;
+            doc.setFontSize(8);
+            doc.setFont(undefined, 'normal');
+            doc.text('_'.repeat(40), 20, y);
+            y += 5;
+            doc.text('Assinatura do Operador', 20, y);
+            
+            doc.text('_'.repeat(40), 120, y - 5);
+            y += 0;
+            doc.text('Assinatura do Supervisor', 120, y);
+            
+            // Salvar PDF
+            const dataAtual = new Date();
+            const nomeArquivo = `Fechamento_Caixa_${dataAtual.getDate()}_${dataAtual.getMonth()+1}_${dataAtual.getFullYear()}.pdf`;
+            doc.save(nomeArquivo);
         });
 
         function calcularResumoFechamento() {
@@ -1371,18 +1505,40 @@ STATUS: ${conferencia.diferencas.total === 0 ? 'CAIXA BATEU ✓' : (conferencia.
 
         // Exportar Vendas
         document.getElementById('btnExportarVendas').addEventListener('click', () => {
-            let csv = 'ID,Data,Total,Pagamento,Items\n';
-            state.vendas.forEach(v => {
-                const items = v.items.map(i => `${i.nome}(${i.quantidade})`).join(';');
-                csv += `${v.id},${formatarData(v.data)},${v.total},${v.pagamento},"${items}"\n`;
+            let csv = 'ID_Venda,Data_Venda,ID_Caixa,Codigo_Produto,Nome_Produto,Quantidade,Preco_Unitario,Subtotal,Forma_Pagamento,Total_Venda\n';
+            
+            state.vendas.forEach(venda => {
+                // Encontrar em qual caixa essa venda está
+                let idCaixa = 'N/A';
+                
+                // Verifica se está no caixa atual aberto
+                if (state.caixaAberto && state.caixaAtual.vendas.find(v => v.id === venda.id)) {
+                    idCaixa = `Caixa Aberto (${formatarData(state.caixaAtual.dataAbertura)})`;
+                } else {
+                    // Procura nos caixas fechados
+                    const caixaEncontrado = state.caixas.find(c => 
+                        c.vendas.find(v => v.id === venda.id)
+                    );
+                    if (caixaEncontrado) {
+                        idCaixa = `Caixa #${caixaEncontrado.id}`;
+                    }
+                }
+                
+                // Cada item da venda vira uma linha
+                venda.items.forEach(item => {
+                    const subtotal = item.preco * item.quantidade;
+                    csv += `${venda.id},"${formatarData(venda.data)}","${idCaixa}",${item.codigo},"${item.nome}",${item.quantidade},${item.preco.toFixed(2)},${subtotal.toFixed(2)},${venda.pagamento},${venda.total.toFixed(2)}\n`;
+                });
             });
 
-            const blob = new Blob([csv], { type: 'text/csv' });
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'vendas.csv';
+            const dataAtual = new Date();
+            a.download = `vendas_detalhadas_${dataAtual.getDate()}_${dataAtual.getMonth()+1}_${dataAtual.getFullYear()}.csv`;
             a.click();
+            URL.revokeObjectURL(url);
         });
 
         // Histórico
